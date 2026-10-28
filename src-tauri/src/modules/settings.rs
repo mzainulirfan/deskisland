@@ -159,13 +159,15 @@ pub async fn set_settings(app: AppHandle, mut settings: Settings) -> Result<(), 
         settings.favorites = existing.current.lock().unwrap().favorites.clone();
     }
     let settings = settings.sanitized();
-    crate::modules::window::set_top_margin(settings.top_margin);
     let bytes = serde_json::to_vec_pretty(&settings).map_err(|e| e.to_string())?;
     let state = app.state::<SettingsState>();
+    // Write first, then publish. Emitting before the write told the island about a
+    // setting the disk never received, so a failed write left UI and file diverged with
+    // no way for either side to notice.
+    fs::write(&state.path, bytes).map_err(|e| e.to_string())?;
+    crate::modules::window::set_top_margin(settings.top_margin);
     *state.current.lock().unwrap() = settings.clone();
-    let res = app.emit("settings-changed", &settings).map_err(|e| e.to_string());
-    let _ = fs::write(&state.path, bytes);
-    res
+    app.emit("settings-changed", &settings).map_err(|e| e.to_string())
 }
 
 /// Shows the settings window, creating it on first use and restoring it afterwards.

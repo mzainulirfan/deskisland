@@ -315,13 +315,15 @@ pub async fn set_favorites(app: AppHandle, favorites: Vec<Favorite>) -> Result<(
         .take(12)
         .collect();
     let state = app.state::<settings::SettingsState>();
-    {
-        let mut current = state.current.lock().unwrap();
-        current.favorites = favorites;
-        let bytes = serde_json::to_vec_pretty(&*current).map_err(|e| e.to_string())?;
-        let _ = fs::write(&state.path, bytes);
-    }
-    let snapshot = state.current.lock().unwrap().clone();
-    let _ = app.emit("settings-changed", &snapshot);
-    Ok(())
+    let snapshot = {
+        let current = state.current.lock().unwrap();
+        settings::Settings {
+            favorites,
+            ..current.clone()
+        }
+    };
+    let bytes = serde_json::to_vec_pretty(&snapshot).map_err(|e| e.to_string())?;
+    fs::write(&state.path, bytes).map_err(|e| e.to_string())?;
+    *state.current.lock().unwrap() = snapshot.clone();
+    app.emit("settings-changed", &snapshot).map_err(|e| e.to_string())
 }

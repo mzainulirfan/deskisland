@@ -247,15 +247,15 @@ pub fn get_reminders(state: State<'_, RemindersState>) -> Vec<Reminder> {
 /// Whole-list replacement, like `set_favorites`: the page owns the editing and this owns the
 /// ids and the file. The normalized list comes back so the store adopts the ids it assigned.
 #[tauri::command]
-pub async fn save_reminders(app: AppHandle, reminders: Vec<Reminder>) -> Vec<Reminder> {
+pub async fn save_reminders(app: AppHandle, reminders: Vec<Reminder>) -> Result<Vec<Reminder>, String> {
     let state = app.state::<RemindersState>();
     let saved = {
         let mut schedule = state.current.lock().expect("reminders state poisoned");
         normalize(&mut schedule, reminders);
         schedule.reminders.clone()
     };
-    let _ = persist(&state);
-    saved
+    persist(&state)?;
+    Ok(saved)
 }
 
 /// Fires `reminder` as if its minute had just arrived, for the panel's test button.

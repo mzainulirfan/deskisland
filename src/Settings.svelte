@@ -128,6 +128,7 @@
   let section = $state<SectionId>('appearance');
   let autostart = $state(false);
   let savedVisible = $state(false);
+  let saveFailed = $state(false);
   let saveTimer: ReturnType<typeof setTimeout> | undefined;
   let savedTimer: ReturnType<typeof setTimeout> | undefined;
   let saveDirty = false;
@@ -225,11 +226,16 @@
     saveDirty = false;
     return setSettings(settings).then(
       () => {
+        saveFailed = false;
         savedVisible = true;
         clearTimeout(savedTimer);
         savedTimer = setTimeout(() => (savedVisible = false), 2000);
       },
-      () => undefined,
+      () => {
+        // settings.json was not written; say so instead of looking saved. The value stays
+        // in the widgets so a retry (or closing the window) re-sends the same settings.
+        saveFailed = true;
+      },
     );
   }
 
@@ -287,9 +293,14 @@
         </p>
         <h1 class="text-[15px] font-semibold tracking-tight">Setelan</h1>
       </div>
-      <span class="saved-pill" class:saved-pill-show={savedVisible}>
+      <span
+        class="saved-pill"
+        class:saved-pill-show={savedVisible || saveFailed}
+        class:saved-pill-error={saveFailed}
+        role="status"
+      >
         <span class="size-[5px] rounded-full bg-current"></span>
-        Tersimpan
+        {saveFailed ? 'Gagal menyimpan' : 'Tersimpan'}
       </span>
     </header>
 
@@ -1012,6 +1023,12 @@
   .saved-pill-show {
     opacity: 1;
     transform: none;
+  }
+
+  .saved-pill-error {
+    border-color: color-mix(in srgb, var(--di-red) 34%, transparent);
+    background: color-mix(in srgb, var(--di-red) 14%, transparent);
+    color: var(--di-red);
   }
 
   /* Two columns of self-sizing cards. `minmax(0, …)` keeps a long label or control from

@@ -40,12 +40,23 @@
     }
   }
 
+  let failure = $state('');
+
+  /** Favorites are optimistic: the grid changes now, the file confirms it. If the write is
+   * rejected the previous list comes back so the grid is never ahead of settings.json. */
   function commit(next: Favorite[]) {
     const sorted = next
       .slice()
       .sort((a, b) => a.name.localeCompare(b.name, 'id', { sensitivity: 'base' }));
+    const previous = island.favorites;
     island.favorites = sorted;
-    void setFavorites(sorted);
+    setFavorites(sorted).then(
+      () => (failure = ''),
+      () => {
+        island.favorites = previous;
+        failure = 'Gagal menyimpan ke berkas setelan.';
+      },
+    );
   }
 
   const full = $derived(favorites.length >= 12);
@@ -207,6 +218,9 @@
         <li class="px-2 py-3 text-center text-[10px] text-[var(--muted)]">Tidak ada yang cocok</li>
       {/if}
     </ul>
+  {/if}
+  {#if failure}
+    <p class="mt-1.5 shrink-0 text-[9px] font-semibold text-[var(--di-red)]">{failure}</p>
   {/if}
 </div>
 

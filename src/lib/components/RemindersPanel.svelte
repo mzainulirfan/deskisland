@@ -35,14 +35,22 @@
     return named.length > 3 ? `${named.length} hari seminggu` : named.join(', ');
   }
 
-  /// Optimistic like the favorites list: the store moves first, then the file. The reply is
-  /// the list the backend kept, so a newly created row picks up the id it was given.
+  /** Optimistic like the favorites list: the store moves first, then the file. The reply is
+   * the list the backend kept, so a newly created row picks up the id it was given. A failed
+   * write rolls the store back so the list matches reminders.json. */
+  let failure = $state('');
+
   async function commit(next: Reminder[]) {
     if (busy) return;
     busy = true;
+    const previous = island.reminders;
     island.reminders = next;
     try {
       island.reminders = await saveReminders(next);
+      failure = '';
+    } catch {
+      island.reminders = previous;
+      failure = 'Gagal menyimpan ke berkas pengingat.';
     } finally {
       busy = false;
     }
@@ -166,6 +174,9 @@
           </li>
         {/each}
       </ul>
+    {/if}
+    {#if failure}
+      <p class="remind-failure">{failure}</p>
     {/if}
   </div>
 
@@ -470,5 +481,13 @@
 
   .save-btn:disabled {
     opacity: 0.4;
+  }
+
+  .remind-failure {
+    flex-shrink: 0;
+    margin-top: 4px;
+    font-size: 9px;
+    font-weight: 600;
+    color: var(--di-red);
   }
 </style>

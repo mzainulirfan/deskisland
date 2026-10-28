@@ -104,7 +104,7 @@ export async function getAppIcon(path: string): Promise<string | null> {
 
 export async function setFavorites(favorites: Favorite[]): Promise<void> {
   if (!inTauri()) return;
-  await invoke('set_favorites', { favorites }).catch(() => undefined);
+  await invoke('set_favorites', { favorites });
 }
 
 export async function getRecentNotifications(): Promise<NotificationEvent[]> {
@@ -157,12 +157,13 @@ export async function getReminders(): Promise<Reminder[]> {
   return invoke<Reminder[]>('get_reminders').catch(() => []);
 }
 
+// Rejections are deliberate: a failed write to reminders.json must not look like a save.
 export async function saveReminders(reminders: Reminder[]): Promise<Reminder[]> {
   if (!inTauri()) return reminders;
-  return invoke<Reminder[]>('save_reminders', { reminders }).catch(() => reminders);
+  return invoke<Reminder[]>('save_reminders', { reminders });
 }
 
-/// Sounds a reminder right now, for the row's test button.
+// Sounds a reminder right now, for the row's test button.
 export async function previewReminder(id: number): Promise<boolean> {
   if (!inTauri()) return false;
   return invoke('preview_reminder', { id }).then(() => true).catch(() => false);
