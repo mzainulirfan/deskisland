@@ -24,7 +24,7 @@ pub fn start(app: AppHandle) {
     std::thread::spawn(move || {
         let mut watcher = Watcher::new();
         loop {
-            if let Some(event) = watcher.sample() {
+            for event in watcher.sample() {
                 let _ = app.emit("notification-hud", event);
             }
             std::thread::sleep(POLL);
@@ -84,35 +84,37 @@ impl Watcher {
         self.conn = None;
     }
 
-    fn sample(&mut self) -> Option<NotificationEvent> {
-        self.path.as_ref()?;
+    fn sample(&mut self) -> Vec<NotificationEvent> {
+        if self.path.is_none() {
+            return Vec::new();
+        }
         let max = match self.connection() {
             Some(conn) => conn.query_row(
                 "SELECT COALESCE(MAX(\"Order\"), 0) FROM Notification",
                 [],
                 |row| row.get(0),
             ),
-            None => return None,
+            None => return Vec::new(),
         };
         let max: i64 = match max {
             Ok(max) => max,
             Err(_) => {
                 self.drop_connection();
-                return None;
+                return Vec::new();
             }
         };
 
         match self.last {
             None => {
                 self.last = Some(max);
-                return None;
+                return Vec::new();
             }
             Some(last) if max <= last => {
                 // A recreated database restarts `Order` at a lower value; rebase silently.
                 if max < last {
                     self.last = Some(max);
                 }
-                return None;
+                return Vec::new();
             }
             Some(_) => {}
         }
@@ -120,7 +122,7 @@ impl Watcher {
         let after = self.last.unwrap_or(0);
         let rows = {
             let Some(conn) = self.connection() else {
-                return None;
+                return Vec::new();
             };
             match conn.prepare(
                 "SELECT n.Payload, h.PrimaryId
@@ -139,20 +141,21 @@ impl Watcher {
                     })
                     .map(|rows| rows.flatten().collect::<Vec<_>>())
                     .unwrap_or_default(),
-                Err(_) => return None,
+                Err(_) => return Vec::new(),
             }
         };
 
-        let mut event = None;
-        for (payload, aumid) in rows {
-            if let Some(next) = self.parse(payload, aumid) {
-                event = Some(next);
-                break;
-            }
-        }
+        // Every row in the window is published, oldest first so the pill ends on the
+        // newest toast. Stopping at the first parseable row used to discard the rest for
+        // good, because `last` still jumped to `max` below.
+        let mut events: Vec<NotificationEvent> = rows
+            .into_iter()
+            .filter_map(|(payload, aumid)| self.parse(payload, aumid))
+            .collect();
+        events.reverse();
 
         self.last = Some(max);
-        event
+        events
     }
 
     fn recent(&mut self, limit: usize) -> Vec<NotificationEvent> {
