@@ -14,6 +14,7 @@
   import AppsPanel from './AppsPanel.svelte';
   import { openSettingsWindow } from '$lib/services/desktop';
   import { island, type PanelTab } from '$lib/stores/island.svelte';
+  import { paneHeight } from '$lib/panel-metrics';
 
   // Media and system volume share one page: both are short cards, and the pill's music /
   // volume pills then have a single subject to open. `full` labels the tooltip because the
@@ -380,9 +381,14 @@
 
       <div class="relative min-w-0 flex-1 overflow-y-auto">
         {#key island.panelTab}
-          <!-- `h-full` lets a pane spend the rail's full column height: the metric cards
-               grow their charts instead of leaving a dead strip under the content. -->
-          <div class="pane h-full">{@render pane(island.panelTab)}</div>
+          <!-- The rail is the tall element of this layout, so the box stays at full height
+               on every tab. The pane takes only the height its own tab asks for and sits at
+               the top of the column: stretching it to the menu's height left most pages
+               with a large empty interior, and the 4 px entry slide inside this
+               `overflow-y-auto` column showed a scrollbar on every page change. -->
+          <div class="pane" style:height="{paneHeight(island.panelTab)}px">
+            {@render pane(island.panelTab)}
+          </div>
         {/key}
       </div>
     </div>

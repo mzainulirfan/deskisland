@@ -17,6 +17,7 @@
   import HudView from './HudView.svelte';
   import NoticeView from './NoticeView.svelte';
   import SystemPanel from './SystemPanel.svelte';
+  import { PANEL_HEIGHTS, PANEL_MIN_HEIGHT } from '$lib/panel-metrics';
 
   const IDLE_SIZES: Record<IdleVariant, { width: number; height: number }> = {
     eyes: { width: 282, height: 50 },
@@ -39,25 +40,7 @@
 
   // Horizontal layout only: each tab paints a tighter box, so the panel shrinks to the
   // content and the trimmed strip below never traps desktop clicks. In rail layout the
-  // menu is the same height on every tab, so the island stays at EXPANDED_SIZE.height
-  // and pane content is top-aligned instead of stretched to fill.
-  // Raise a value here if a tab feels cramped — nothing needs to change elsewhere.
-  const PANEL_HEIGHTS: Record<PanelTab, number> = {
-    system: 208,
-    // Playback and volume sit side by side in one card, so the shell only needs the
-    // height of the album-art tile plus its padding.
-    media: 176,
-    // Hero circular dial + controls + interactive Pomodoro pipeline & preset hub.
-    timer: 268,
-    // One row per alarm plus the editor; the editor column (text, time, two chip rows,
-    // presets, save, hint) is the tall part, so the pane is sized for it.
-    reminders: 296,
-    processes: 220,
-    downloads: 220,
-    apps: 260,
-    quick: 220,
-  };
-  const PANEL_MIN_HEIGHT = 150;
+  // menu is the same height on every tab, so the island stays at EXPANDED_SIZE.height.
   function panelHeight(tab: PanelTab): number {
     if (island.navLayout === 'rail') return EXPANDED_SIZE.height;
     const wanted = PANEL_HEIGHTS[tab] ?? EXPANDED_SIZE.height;
