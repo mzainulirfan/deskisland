@@ -28,6 +28,70 @@ export type PanelTab =
   | 'apps'
   | 'quick';
 
+export type PomodoroPhase = 'work' | 'shortBreak' | 'longBreak';
+export type TimerMode = 'pomodoro' | 'timer';
+
+export interface Pomodoro {
+  mode: TimerMode;
+  phase: PomodoroPhase;
+  /** 1..4, the focus round inside the current cycle. */
+  round: number;
+  workMinutes: number;
+  shortBreakMinutes: number;
+  longBreakMinutes: number;
+  /** Local date the two counters below belong to; a new day starts them over. */
+  day: string;
+  sessions: number;
+  focusMinutes: number;
+}
+
+const POMO_KEY = 'desk_island_pomo_state';
+const POMO_PHASES: PomodoroPhase[] = ['work', 'shortBreak', 'longBreak'];
+
+function todayKey() {
+  const at = new Date();
+  const pad = (value: number) => String(value).padStart(2, '0');
+  return `${at.getFullYear()}-${pad(at.getMonth() + 1)}-${pad(at.getDate())}`;
+}
+
+/** Minutes survive a corrupt or hand-edited store as a sane whole number. */
+function storedMinutes(value: unknown, fallback: number) {
+  const num = Number(value);
+  return Number.isFinite(num) && num > 0 ? clamp(Math.round(num), 1, 24 * 60) : fallback;
+}
+
+function readPomo(): Pomodoro {
+  let saved: Partial<Pomodoro> = {};
+  try {
+    saved = JSON.parse(localStorage.getItem(POMO_KEY) ?? '{}') as Partial<Pomodoro>;
+  } catch {
+    saved = {};
+  }
+  const today = todayKey();
+  const sameDay = saved.day === today;
+  return {
+    mode: saved.mode === 'timer' ? 'timer' : 'pomodoro',
+    phase: POMO_PHASES.includes(saved.phase as PomodoroPhase)
+      ? (saved.phase as PomodoroPhase)
+      : 'work',
+    round: clamp(Math.round(saved.round ?? 1) || 1, 1, 4),
+    workMinutes: storedMinutes(saved.workMinutes, 25),
+    shortBreakMinutes: storedMinutes(saved.shortBreakMinutes, 5),
+    longBreakMinutes: storedMinutes(saved.longBreakMinutes, 15),
+    day: today,
+    sessions: sameDay ? Math.max(0, Math.round(saved.sessions ?? 0) || 0) : 0,
+    focusMinutes: sameDay ? Math.max(0, Math.round(saved.focusMinutes ?? 0) || 0) : 0,
+  };
+}
+
+function writePomo(pomo: Pomodoro) {
+  try {
+    localStorage.setItem(POMO_KEY, JSON.stringify(pomo));
+  } catch {
+    // Private mode or a full quota: the cycle keeps working for this session.
+  }
+}
+
 export const IDLE_ORDER: IdleVariant[] = [
   'eyes',
   'min',
@@ -127,6 +191,12 @@ class IslandStore {
   timer = $state<TimerInfo | null>(null);
   /** Minutes the pill and the timer page arm themselves with when nothing runs. */
   timerMinutes = $state(25);
+  /**
+   * The Pomodoro cycle lives here rather than inside the timer panel, so the pill, the
+   * panel and anything added later all read the same round instead of one component's
+   * mount state. localStorage keeps it across restarts.
+   */
+  pomo = $state<Pomodoro>(readPomo());
   /** True while the Rust alarm loop is chiming — the notice stays visible until dismissed. */
   timerAlarming = $state(false);
   /** Wall clock in ms, refreshed only while a countdown is on screen. */
@@ -161,6 +231,42 @@ class IslandStore {
     if (!timer) return 0;
     if (timer.status === 'running') return Math.max(0, timer.endsAt - this.now);
     return timer.status === 'paused' ? Math.max(0, timer.remaining) : 0;
+  }
+
+  pomoMinutes(phase: PomodoroPhase = this.pomo.phase): number {
+    if (phase === 'work') return this.pomo.workMinutes;
+    if (phase === 'shortBreak') return this.pomo.shortBreakMinutes;
+    return this.pomo.longBreakMinutes;
+  }
+
+  /// Every Pomodoro edit writes through: the store is the only place that knows the cycle,
+  /// and localStorage is its mirror.
+  updatePomo(patch: Partial<Pomodoro>) {
+    this.pomo = { ...this.pomo, ...patch, day: todayKey() };
+    writePomo(this.pomo);
+  }
+
+  /// Work -> break (the long one after round 4), break -> the next round's work.
+  /// `completed` is false when the user skips a phase, so today's counters only ever
+  /// credit a focus session that actually ran out.
+  nextPomoPhase(completed: boolean): PomodoroPhase {
+    const pomo = this.pomo;
+    const patch: Partial<Pomodoro> = {};
+    if (completed && pomo.phase === 'work') {
+      patch.sessions = pomo.sessions + 1;
+      patch.focusMinutes = pomo.focusMinutes + pomo.workMinutes;
+    }
+    if (pomo.phase === 'work') {
+      patch.phase = pomo.round >= 4 ? 'longBreak' : 'shortBreak';
+    } else if (pomo.phase === 'shortBreak') {
+      patch.round = Math.min(4, pomo.round + 1);
+      patch.phase = 'work';
+    } else {
+      patch.round = 1;
+      patch.phase = 'work';
+    }
+    this.updatePomo(patch);
+    return this.pomo.phase;
   }
 
   setTimer(info: TimerInfo | null) {

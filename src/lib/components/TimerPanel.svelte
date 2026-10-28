@@ -1,7 +1,7 @@
 <script lang="ts">
-  import { onMount } from 'svelte';
   import Icon from './Icon.svelte';
   import { island } from '$lib/stores/island.svelte';
+  import type { PomodoroPhase } from '$lib/stores/island.svelte';
   import {
     addTimerTime,
     cancelTimer,
@@ -12,7 +12,6 @@
   import type { TimerInfo } from '$lib/types/system';
 
   type ActiveMode = 'pomodoro' | 'timer';
-  type PomodoroPhase = 'work' | 'shortBreak' | 'longBreak';
 
   interface TimerPreset {
     minutes: number;
@@ -74,90 +73,39 @@
   const left = $derived(island.timerLeft);
   const alarming = $derived(island.timerAlarming);
 
-  // Active view: Pomodoro as default centerpiece
-  let activeMode = $state<ActiveMode>('pomodoro');
+  // The cycle itself lives in the island store; this panel only reads and commands it.
+  const pomo = $derived(island.pomo);
+  const activeMode = $derived<ActiveMode>(pomo.mode);
+  const pomoPhase = $derived(pomo.phase);
+  const pomoRound = $derived(pomo.round);
+  const pomoWorkMinutes = $derived(pomo.workMinutes);
+  const pomoShortBreakMinutes = $derived(pomo.shortBreakMinutes);
+  const pomoLongBreakMinutes = $derived(pomo.longBreakMinutes);
+  const pomoTodayCount = $derived(pomo.sessions);
+  const pomoTodayMinutes = $derived(pomo.focusMinutes);
 
-  // Pomodoro State
-  let pomoPhase = $state<PomodoroPhase>('work');
-  let pomoRound = $state(1); // 1 to 4
-  let pomoWorkMinutes = $state(25);
-  let pomoShortBreakMinutes = $state(5);
-  let pomoLongBreakMinutes = $state(15);
-  let pomoTodayCount = $state(0);
-  let pomoTodayMinutes = $state(0);
-
-  // Standard Timer State
-  let timerMinutes = $state(clampMinutes(island.timerMinutes));
+  const timerMinutes = $derived(island.timerMinutes);
   let timerLabel = $state('');
 
   let busy = $state(false);
-
-  function getTodayKey() {
-    return new Date().toISOString().slice(0, 10);
-  }
-
-  function loadStorage() {
-    try {
-      const raw = localStorage.getItem('desk_island_pomo_state');
-      if (!raw) return;
-      const data = JSON.parse(raw);
-      if (data.mode) activeMode = data.mode;
-      if (data.workMinutes) pomoWorkMinutes = clampMinutes(data.workMinutes);
-      if (data.shortBreakMinutes) pomoShortBreakMinutes = clampMinutes(data.shortBreakMinutes);
-      if (data.longBreakMinutes) pomoLongBreakMinutes = clampMinutes(data.longBreakMinutes);
-      if (data.round) pomoRound = Math.max(1, Math.min(4, data.round));
-      if (data.phase) pomoPhase = data.phase;
-      if (data.date === getTodayKey()) {
-        pomoTodayCount = data.count || 0;
-        pomoTodayMinutes = data.minutes || 0;
-      }
-    } catch {}
-  }
-
-  function saveStorage() {
-    try {
-      localStorage.setItem(
-        'desk_island_pomo_state',
-        JSON.stringify({
-          mode: activeMode,
-          workMinutes: pomoWorkMinutes,
-          shortBreakMinutes: pomoShortBreakMinutes,
-          longBreakMinutes: pomoLongBreakMinutes,
-          round: pomoRound,
-          phase: pomoPhase,
-          date: getTodayKey(),
-          count: pomoTodayCount,
-          minutes: pomoTodayMinutes,
-        }),
-      );
-    } catch {}
-  }
-
-  onMount(() => {
-    loadStorage();
-  });
 
   function clampMinutes(value: number) {
     return Math.max(1, Math.min(MAX_MINUTES, Math.round(value || 1)));
   }
 
   function getPomoMinutes(phase: PomodoroPhase): number {
-    if (phase === 'work') return pomoWorkMinutes;
-    if (phase === 'shortBreak') return pomoShortBreakMinutes;
-    return pomoLongBreakMinutes;
+    return island.pomoMinutes(phase);
   }
 
   function setPomoMinutes(phase: PomodoroPhase, val: number) {
     const clamped = clampMinutes(val);
-    if (phase === 'work') pomoWorkMinutes = clamped;
-    else if (phase === 'shortBreak') pomoShortBreakMinutes = clamped;
-    else pomoLongBreakMinutes = clamped;
-    saveStorage();
+    if (phase === 'work') island.updatePomo({ workMinutes: clamped });
+    else if (phase === 'shortBreak') island.updatePomo({ shortBreakMinutes: clamped });
+    else island.updatePomo({ longBreakMinutes: clamped });
   }
 
   function setTimerMinutes(val: number, autoLabel?: string) {
-    timerMinutes = clampMinutes(val);
-    island.timerMinutes = timerMinutes;
+    island.timerMinutes = clampMinutes(val);
     if (autoLabel && (!timerLabel || TIMER_PRESETS.some((p) => p.label === timerLabel))) {
       timerLabel = autoLabel;
     }
@@ -256,58 +204,30 @@
   // Handle transition when Pomodoro phase completes
   function advancePomodoroSession() {
     island.dismissTimerAlarm();
-    if (pomoPhase === 'work') {
-      pomoTodayCount += 1;
-      pomoTodayMinutes += pomoWorkMinutes;
-      saveStorage();
-      if (pomoRound >= 4) {
-        pomoPhase = 'longBreak';
-      } else {
-        pomoPhase = 'shortBreak';
-      }
-    } else if (pomoPhase === 'shortBreak') {
-      pomoRound = Math.min(4, pomoRound + 1);
-      pomoPhase = 'work';
-    } else {
-      // Completed long break -> restart cycle at round 1
-      pomoRound = 1;
-      pomoPhase = 'work';
-    }
-    saveStorage();
+    island.nextPomoPhase(true);
     startCurrentSession();
   }
 
   function skipPhase() {
     island.dismissTimerAlarm();
     void apply(cancelTimer);
-    if (pomoPhase === 'work') {
-      pomoPhase = pomoRound >= 4 ? 'longBreak' : 'shortBreak';
-    } else {
-      if (pomoPhase === 'longBreak') pomoRound = 1;
-      else pomoRound = Math.min(4, pomoRound + 1);
-      pomoPhase = 'work';
-    }
-    saveStorage();
+    island.nextPomoPhase(false);
   }
 
   function selectPhase(phase: PomodoroPhase) {
     if (live) return;
-    pomoPhase = phase;
-    saveStorage();
+    island.updatePomo({ phase });
   }
 
   function resetCycle() {
     if (live) void apply(cancelTimer);
     island.dismissTimerAlarm();
-    pomoRound = 1;
-    pomoPhase = 'work';
-    saveStorage();
+    island.updatePomo({ round: 1, phase: 'work' });
   }
 
   function toggleMode(mode: ActiveMode) {
     if (activeMode === mode) return;
-    activeMode = mode;
-    saveStorage();
+    island.updatePomo({ mode });
   }
 
   function onKeydown(event: KeyboardEvent) {
