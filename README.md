@@ -1,96 +1,130 @@
 # Desk Island
 
-Dynamic Island untuk Windows 10/11: pill hitam di tengah atas layar yang melebar saat ada aktivitas.
+Dynamic Island untuk Windows 10/11: pill kecil di tepi atas layar yang melebar saat ada aktivitas, dan membuka panel berisi pemantauan sistem, media, timer, pengingat harian, proses, unduhan, aplikasi, dan pintasan setelan Windows.
 
-Stack: Svelte 5 + Tauri 2 + Rust + Tailwind CSS 4.
+Stack: Svelte 5 (runes) + Tauri 2 + Rust + Tailwind CSS 4. Hanya Windows; tidak ada jalur kode lintas platform yang benar-benar dipakai.
 
 ## Menjalankan
 
 ```powershell
 npm install
-npm run tauri dev
+npm run tauri dev      # aplikasi Tauri (butuh WebView2)
 ```
 
-Build installer NSIS: `npm run tauri build` â†’ `src-tauri/target/release/bundle/nsis/Desk Island_0.1.0_x64-setup.exe`.
+- `npm run dev` saja menjalankan pill di browser: semua command dibungkus `inTauri()` sehingga aplikasi tetap jalan penuh dengan nilai default, hanya tanpa data OS. `?poll=1` memaksa mode polling browser meskipun di dalam Tauri.
+- `npm run check` = `svelte-check` (hanya `src/`; `src-tauri` di-exclude dari tsconfig, jadi `cargo check` tetap harus terpisah).
+- `npm run tauri build` → `src-tauri/target/release/desk-island.exe` dan installer NSIS per-user di `src-tauri/target/release/bundle/nsis/Desk Island_0.1.0_x64-setup.exe`.
 
-## Status: Tahap 4 (desain ulang, tray, autostart, setelan & installer)
+## Status
 
-- Pill transparan, borderless, always-on-top, menempel di atas monitor utama (margin 14 logical px) dengan tiga anchor: kiri, tengah, kanan.
-- Tiga ukuran: idle 320×48, notice 460×72, panel 840×248. Jendela native difit ke ukuran panel saat start lalu tidak di-resize; area di luar pill/panel dibuat click-through.
-- Idle menampilkan mark, jam, divider, indikator aktivitas media, ikon jaringan, dan chip baterai. Hover punya jeda intent Â±120 ms sebelum panel terbuka, dan pill meredup setelah 30 detik tanpa interaksi.
-- Panel memakai delapan tab: **Sistem**, **Media**, **Timer & Pomodoro**, **Pengingat**, **Proses**, **Unduhan**, **Aplikasi**, dan **Cepat**. Sistem berisi kartu CPU/RAM/Jaringan/Disk dengan sparkline; Media menampilkan sesi GSMTC dan volume; Timer & Pomodoro mengelola hitung mundur standar serta siklus fokus Pomodoro (fokus, rehat, rehat panjang, dan pelacak produktivitas); Proses menampilkan 6 proses teratas; Unduhan memantau berkas unduhan; Aplikasi menampilkan daftar aplikasi favorit & peluncur cepat; Cepat membuka halaman Setelan Windows dan Task Manager.
-- Pengingat harian berulang: maksimal 12 alarm "HH:MM" dengan pilihan hari (bitmask Senin-Minggu). Backend yang punya datanya (`get_reminders` / `save_reminders` / `preview_reminder`, tersimpan di `reminders.json` di app data dir) dan sebuah thread watcher memeriksa jam dinding tiap 2 detik. Saat menit dan harinya cocok, island muncul walau sedang disembunyikan, pill morph jadi notice "teks / Pengingat HH:MM", dan `system_beep` berbunyi; klik notice membuka tab Pengingat. Berkas yang diedit manual ikut diperbaiki (jam tak valid dibulatkan ke menit, teks dipotong, id diisi), dan satu alarm hanya berbunyi sekali per hari karena menit yang sudah dipakai dicatat sebagai `tanggal#id` di memori.
-- Folder Downloads dipantau dari Rust (`downloads_status`, polling `read_dir` + jeda 2 detik sebelum file dianggap selesai ditulis). File baru membuat pill morph ke notifikasi 460×72 ("nama berkas Â· terunduh Â· ukuran") selama 6 detik; klik di notifikasi langsung membuka panel.
-- Notifikasi Windows (Action Center) dicerminkan ke pill: icon lonceng, judul, lalu "nama app Â· isi" selama 5,5 detik. Toast baru dibaca dari database WPN (`wpndatabase.db`) secara read-only tiap 500 ms â€” `UserNotificationListener` tidak bisa dipakai aplikasi desktop tanpa identitas paket. Pembacaan pertama hanya mencatat posisi terakhir supaya notifikasi lama tidak diputar ulang, dan notifikasi diabaikan saat panel sedang terbuka. Fitur ini ikut mati kalau notifikasi Windows dimatikan (`ToastEnabled=0`), karena Windows tidak menulis toast ke database.
-- Posisi, tema, autostart, notifikasi, dan timing diatur dari jendela Setelan yang dibuka lewat gear di header panel atau menu tray. Nilainya disimpan di `settings.json` lewat backend dan dipulihkan saat aplikasi dijalankan ulang; tema diterapkan lewat CSS variable (`data-theme` di `<html>`). Metrik idle sudah dihapus dari model setelan.
-- Saat idle, perubahan volume (media key, mixer, aplikasi lain) memunculkan HUD volume Â±1,2â€“1,4 detik di pill: icon speaker, bar, persen, dan "Bisu" saat mute. Volume dipoll tiap 300 ms hanya selama panel tertutup; saat panel terbuka, panel sendiri yang jadi sumber data.
-- Tombol Tab, Enter, Win (juga Esc, Space, Backspace, panah, Caps Lock) memunculkan HUD berisi icon tombol + namanya dengan keterangan "ditekan" â€” tanpa label "Keyboard". Dideteksi lewat low-level hook di `modules/keyboard.rs` yang hanya membaca whitelist tombol itu â€” teks yang diketik tidak pernah disentuh, dan keyup tidak ditampilkan.
-- CPU, RAM, throughput jaringan (rx/tx per detik), baterai, dan pemakaian disk dibaca dari Rust (`sysinfo` + `GetSystemPowerStatus`) lewat `system_stats`, dipolling 1 detik sekali.
-- Volume master (Core Audio `IAudioEndpointVolume`): bar di panel jadi slider â€” klik atau geser untuk mengatur level; tombol speaker di kanan melakukan mute/unmute (`set_master_mute`). Per-app volume belum didukung dan ditandai jelas di UI.
-- Daftar 6 proses terpanas menurut CPU lewat `top_processes` (`sysinfo`, `ProcessesToUpdate::All`); nama proses ditampilkan lengkap dan dipotong oleh UI bila terlalu panjang.
-- Sesi media (GSMTC `GlobalSystemMediaTransportControlsSessionManager`) lewat `now_playing`: judul, artis, app, posisi/durasi. Panel menampilkan `â€”` dan "tidak ada pemutar" selama tidak ada aplikasi yang menerbitkan sesi media. Tombol playback belum diimplementasikan dan tidak ditampilkan sebagai kontrol palsu.
-- Data volume/media/proses diambil saat panel terbuka karena masing-masing butuh round-trip COM. Saat panel tertutup, volume tetap dipoll tiap 300 ms dan media dipoll lambat tiap 3 detik khusus untuk status idle.
-- Keluar dari aplikasi lewat menu tray. Icon tray tetap ada saat island disembunyikan; klik kiri icon untuk menyembunyikan/menampilkan pill, klik kanan membuka menu Sembunyikan island / Buka panel (Ctrl+Alt+Space) / Mulai otomatis / Setelan / Keluar. Hotkey global `Ctrl+Alt+Space` membuka panel dan mem-pin-nya; tekan lagi untuk menutup. Panel yang di-pin tidak collapse saat kursor keluar. Saat aplikasi fullscreen/game aktif, pill otomatis disembunyikan; hotkey tetap bisa menampilkan panel sementara. Di Windows 11 icon baru mendarat di overflow â€” buka lewat chevron atau pin ke taskbar supaya menu kanan-klik selalu terlihat.
-- Jendela Setelan berisi posisi island, tema, toggle "Mulai otomatis" (menulis/menghapus entri HKCU Run lewat `tauri-plugin-autostart`), toggle "Notifikasi Windows" (preferensi lokal untuk menahan toast dari pill), dan timing HUD/notice/poll. Status autostart disinkronkan dua arah antara jendela setelan dan checkbox menu tray lewat event `autostart-changed`.
-- Jendela Setelan dibuat lewat command async (`open_settings`) untuk menghindari deadlock WebView2 saat membuat window dari command sinkron di Windows. View-nya dipilih lewat initialization script (`window.__DESK_VIEW__ = 'settings'`), bukan query string.
-- Installer Windows memakai NSIS mode `currentUser` (`npm run tauri build`), dengan icon aplikasi yang sama untuk executable dan installer.
+### Island
+
+- Pill transparan, borderless, always-on-top, `skipTaskbar`, `focus: false`. Jendela native selalu `EXPANDED_SIZE + 2×PAD` (672+64 × 358+64 = 736×422) dan punya `PAD` 32 px ruang kosong di sekelilingnya supaya glow tidak terpotong; margin layar 16 px logis, jarak dari tepi atas bisa diatur 0–200 px lewat setelan.
+- Ukuran yang benar: idle per varian (min 148, timer/battery 156, mon 260, music 264, eyes 282, notification 320 — semuanya tinggi 50), notice 320×50, welcome 288×50, HUD minimal 240 px, panel maksimum 672×358.
+- Tujuh varian idle (eyes, min, music, mon, timer, battery, notification) plus `auto` yang berganti tiap 6 detik. Varian `eyes`/`min` memakai maskot yang pupilnya melacak posisi kursor OS; skala maskot bisa diatur.
+- Mesin mode `idle → hud → notice → panel`. `hud` (volume, tombol) dan `notice` (unduhan, notifikasi Windows, timer, pengingat) punya deadline sendiri (`hudUntil`, `noticeUntil`); HUD menang saat aktif, notice muncul lagi setelahnya. Notice timer yang sedang berbunyi tidak bisa kedaluwarsa sampai di-dismiss.
+- Panel punya delapan tab: **Sistem** (kartu CPU/RAM/Jaringan/Disk + sparkline), **Media** (sesi GSMTC + kontrol playback, volume master digabung di halaman yang sama), **Timer & Pomodoro**, **Pengingat**, **Proses**, **Unduhan**, **Aplikasi** (favorit + peluncur cepat dari Start Menu), dan **Cepat** (enam pintasan halaman Setelan Windows: Wi-Fi, Bluetooth, Mode malam, Fokus, Mikrofon, Kecerahan).
+- Navigasi panel ada dua layout dan keduanya nyata: `rail` (menu vertikal di kiri, satu pane, tinggi selalu 358) dan `tabs` (strip horizontal di header + track geser; tiap tab punya tinggi sendiri di `PANEL_HEIGHTS`, 176–296, clamp 150–358).
+- Overlay sambutan (welcome) saat island baru muncul atau kembali dari tersembunyi: teks diketik per karakter, durasi dan isinya bisa diatur, termasuk "kolam" sambutan yang dirotasi tiap kali island muncul kembali.
+- Keluar hanya lewat tray. Klik kiri icon = sembunyikan/tampilkan, klik kanan = menu (Sembunyikan island / Buka panel / Mulai otomatis / Setelan / Keluar). Hotkey global `Ctrl+Alt+Space` membuka panel dan **mem-pin**-nya; panel yang di-pin tidak collapse saat kursor keluar. Saat aplikasi fullscreen aktif, pill disembunyikan dan hotkey hanya menampilkannya sementara ("peek").
+
+### Deteksi hover dan klik-tembus
+
+Karena jendela click-through saat pill menutup, `pointerenter`/`pointerleave` DOM tidak bisa dipakai. Sebuah thread di Rust mem-`GetCursorPos` tiap 12 ms dan membandingkannya dengan rect region yang sedang digambar (region panel diberi kelonggaran 4 px). Masuk dihitung setelah 2 sampel (~24 ms), keluar setelah 3 sampel (~36 ms), jadi kursor yang cuma lewat tidak memicu morph. Selain edge, thread itu mengirim posisi kursor ternormalisasi maksimal 30 fps khusus untuk melacak pupil mata, dan berhenti mengirim sama sekali saat lebar pill > 400 px (panel terbuka, mata tidak digambar). `set_island_passthrough` (`WS_EX_TRANSPARENT`) aktif setiap kali kondisi "panel terbuka ATAU kursor di atas pill" tidak terpenuhi. Setelah 30 detik tanpa interaksi pill meredup, dan kembali terang saat kursor mendekat.
+
+### Data dan pemicu latar
+
+Semua pemicu hidup di thread Rust, bukan interval frontend, supaya tetap berbunyi saat island tersembunyi atau webview sedang tidur:
+
+- **Sistem** — CPU, RAM, throughput jaringan (rx/tx per detik), baterai, dan pemakaian disk (`sysinfo` + `GetSystemPowerStatus`) dibaca frontend tiap `poll_ms` (default 1000 ms) lewat `system_stats`. Volume dipoll 500 ms, media 3000 ms; data berat (proses, unduhan, media) hanya diambil saat tab-nya tampil.
+- **Timer & Pomodoro** — hitung mundur dimiliki backend (`TimerInfo` dengan deadline), thread-nya tidur adaptif 200 ms saat jalan / 1000 ms saat idle / 3000 ms saat alarm. Alarm mengulang `MessageBeep` maksimal 20 kali sampai di-dismiss. Siklus Pomodoro (fokus/rehat/rehat panjang, ronde, streak) diatur frontend.
+- **Pengingat harian** — sampai 12 alarm `"HH:MM"` dengan pilihan hari (bitmask Senin–Minggu) di `reminders.json`. Backend punya datanya (`get_reminders` / `save_reminders` / `preview_reminder`); satu thread memeriksa jam dinding tiap 2 detik, dan saat menit plus harinya cocok island dipaksa muncul, pill morph jadi notice, dan `MessageBeep` berbunyi (frontend menambah chime WebAudio tiga nada). Berkas yang diedit manual ikut diperbaiki saat dimuat (jam tak valid dibulatkan, teks dipotong, id diisi) dan satu alarm hanya berbunyi sekali per hari karena menit yang sudah dipakai dicatat sebagai `tanggal#id`.
+- **Notifikasi Windows** — dibaca read-only dari `wpndatabase.db` (SQLite) tiap 500 ms; `UserNotificationListener` tidak bisa dipakai aplikasi desktop tanpa identitas paket. Pembacaan pertama hanya mencatat posisi terakhir supaya toast lama tidak diputar ulang, dan seluruh notifikasi diabaikan saat `notifications: false`.
+- **Unduhan** — folder Downloads di-poll (`read_dir` + jeda settle 2 detik), Zone.Identifier dihapus supaya hasil unduhan bisa langsung dibuka.
+- **Keyboard** — low-level hook `WH_KEYBOARD_LL` pada thread dengan message loop sendiri, hanya membaca whitelist (Tab, Enter, Win, Esc, Space, Backspace, panah, Caps Lock); teks ketikan tidak pernah disentuh. Esc dipakai untuk menutup panel karena webview biasanya tidak punya fokus keyboard.
+- **Fullscreen** — `SHQueryUserNotificationState` dicek tiap 1500 ms dan event hanya dikirim saat nilainya berubah.
+
+### Setelan
+
+Satu jendela `settings` terpisah, dibuka dari gear di header panel atau menu tray, berisi empat halaman: **Tampilan**, **Sambutan**, **Perilaku**, **Integrasi**. Semuanya disimpan ke `settings.json` lewat backend dan dipulihkan saat start; nilai di luar rentang dibetulkan saat baca dan saat tulis. Status autostart disinkronkan dua arah antara jendela setelan dan checkbox tray lewat event `autostart-changed`.
 
 ## Struktur
 
 ```
-src/lib/components/   Island.svelte (morph + hover + pin + fullscreen), IdleView, NoticeView, SystemPanel,
-                      MetricCard, Sparkline, MediaPanel, VolumePanel, TimerPanel, RemindersPanel, ProcessPanel,
-                      QuickSettingsPanel, Icon
-src/lib/stores/       island.svelte.ts — mode, overlay, panelTab, pinned, fullscreen, time, stats, volume,
-                      media, processes, notice, posisi, tema, timer, reminders
-src/lib/services/     desktop.ts — pembungkus invoke()
-src/app.css           token desain --di-* + alias lama, tema gelap/terang, motion, reduced-motion
-src-tauri/src/modules/system.rs     sampling CPU, RAM, jaringan, baterai, disk (Monitor persisten di AppState)
-src-tauri/src/modules/process.rs    daftar proses terpanas
-src-tauri/src/modules/audio.rs      volume master Core Audio + mute
-src-tauri/src/modules/media.rs      sesi media GSMTC
-src-tauri/src/modules/downloads.rs  watcher folder Downloads (polling + jeda settle)
-src-tauri/src/modules/notifications.rs  pembaca read-only database notifikasi WPN (polling 500 ms)
-src-tauri/src/modules/timer.rs      countdown backend, watcher deadline thread, sistem alarm & audio repeat
-src-tauri/src/modules/reminders.rs  jadwal pengingat harian (reminders.json), watcher jam dinding, command CRUD
-src-tauri/src/modules/quick.rs      command halaman Setelan Windows + Task Manager
-src-tauri/src/modules/settings.rs   settings.json, command setelan, open_settings async
-src-tauri/src/modules/tray.rs       icon tray, menu tampil/sembunyi, autostart dan keluar
-src-tauri/src/modules/autostart.rs  command status/toggle autostart + sinkronisasi ke tray
-src-tauri/src/modules/keyboard.rs   low-level keyboard hook (whitelist Tab/Enter/Win dan beberapa tombol lain) untuk HUD tombol
-src-tauri/src/modules/fullscreen.rs deteksi aplikasi fullscreen via SHQueryUserNotificationState + event fullscreen-changed
-src-tauri/src/modules/com.rs        CoInitializeEx per thread + blocking helper untuk WinRT async
-src-tauri/src/modules/window.rs     fit_island_window, set_island_position, cursor_over_island, set_island_passthrough, quit_app
+src/main.ts                 bootstrap Svelte; memilih view lewat window.__DESK_VIEW__
+src/App.svelte              mount island, polling, dengar semua event backend, chime WebAudio
+src/Settings.svelte         jendela Setelan (4 halaman)
+src/app.css                 token --di-*, alias semantik, tema gelap/terang, motion, reduced-motion
+src/lib/stores/island.svelte.ts   satu-satunya state: mode, overlay+deadline, panelTab, nav,
+                                  pinned, fullscreen, stats, volume, media, processes, downloads,
+                                  favorites, appShortcuts, reminders, timer, posisi, tema, timing
+src/lib/services/desktop.ts  pembungkus invoke() dengan guard inTauri() dan nilai fallback
+src/lib/types/system.ts     tipe payload yang sama dengan sisi Rust
+src/lib/greetings.ts        parser kolam sambutan
+src/lib/components/         Island (morph+hover+pin+resize+welcome), SystemPanel (shell+nav),
+                            IdleView, HudView, NoticeView, WelcomeView, Mascot, Eyes,
+                            MediaPanel, VolumePanel, TimerPanel, RemindersPanel, ProcessPanel,
+                            DownloadsPanel, AppsPanel, QuickSettingsPanel,
+                            MetricCard, StatTile, Sparkline, SliderRow, Icon
+src-tauri/src/main.rs       flag WebView2 (anti-backgrounding) + run()
+src-tauri/src/lib.rs        builder, plugin, managed state, setup, generate_handler
+src-tauri/src/modules/system.rs       sampling CPU/RAM/jaringan/baterai/disk (Monitor persisten)
+src-tauri/src/modules/process.rs      proses terpanas (nama sama satu exe digabung, CPU <= 0,5 dibuang)
+src-tauri/src/modules/audio.rs        volume master + mute (Core Audio)
+src-tauri/src/modules/media.rs        sesi GSMTC + kontrol playback
+src-tauri/src/modules/downloads.rs    watcher folder Downloads
+src-tauri/src/modules/notifications.rs pembaca read-only database notifikasi WPN
+src-tauri/src/modules/timer.rs        countdown backend, thread alarm, MessageBeep
+src-tauri/src/modules/reminders.rs    jadwal pengingat harian, watcher jam dinding, CRUD
+src-tauri/src/modules/apps.rs         walk Start Menu, icon -> base64 PNG, favorit
+src-tauri/src/modules/quick.rs        pembuka halaman Setelan Windows + Task Manager
+src-tauri/src/modules/settings.rs     settings.json, sanitasi, jendela Setelan
+src-tauri/src/modules/autostart.rs    status/toggle autostart + sinkronisasi tray
+src-tauri/src/modules/tray.rs         icon tray, menu, keluar
+src-tauri/src/modules/keyboard.rs     hook WH_KEYBOARD_LL untuk HUD tombol
+src-tauri/src/modules/fullscreen.rs   SHQueryUserNotificationState + fullscreen-changed
+src-tauri/src/modules/window.rs       fit/place/anchor, region hover, passthrough, monitor kursor
+src-tauri/src/modules/com.rs          CoInitializeEx per thread + helper blocking WinRT
+src-tauri/examples/media_probe.rs     perkakas bantu saat mengembangkan modul media
 ```
+
+Berkas data di `%APPDATA%\com.desk.island`: `settings.json` (snake_case) dan `reminders.json` (camelCase). Keduanya jatuh ke `temp_dir()` kalau app data dir tidak tersedia.
 
 ## Catatan desain
 
-Jendela native difit ke ukuran panel maksimum (840×248, `tauri.conf.json`) saat start dan tidak di-resize lagi; posisinya hanya berubah saat anchor diganti. Saat idle/notice, area di luar pill/notice dibuat click-through dengan `set_island_passthrough` (`WS_EX_TRANSPARENT`), jadi klik tembus ke aplikasi di belakangnya. `fit_island_window` dan `set_island_position` memakai satu helper `place()` supaya margin 14 logical px dan offset monitor primer konsisten.
+**Jendela tidak pernah di-resize saat animasi, tapi memang berubah ukuran antar tab.** `fit_island_window` memanggil `set_size` + `place`, dan frontend memanggilnya tiap pindah tab dengan strategi "naik langsung, turun ditunda 220 ms": saat mengecil jendela menahan tinggi lama dulu supaya sudut glow yang membulat tidak terpotong tepi jendela di tengah transisi. Catatan komentar di `window.rs:152` ("never resized afterwards") sudah tidak benar — yang benar adalah tidak ada resize *selagi* morph berjalan.
 
-Karena jendela click-through saat idle, `pointerenter`/`pointerleave` dari DOM tidak bisa dipakai. Hover dideteksi dengan polling `cursor_over_island` (posisi kursor OS vs rect pill/panel) tiap 40 ms. Target hover mengikuti apa yang sedang digambar: idle 320×48, notice 460×72, panel 840×248. Panel baru terbuka setelah 3 tick di dalam (120 ms) supaya kursor yang hanya lewat tidak langsung memicu morph; collapse baru jalan setelah 4 tick berturut-turut di luar (160 ms). Setelah 30 detik idle, pill meredup sampai kursor mendekat lagi.
+**Glow dibuat inset**, bukan luar, karena jendela Tauri transparan berukuran sama dengan island: pada panel penuh, glow luar akan terpotong batas jendela dan tampak kotak.
 
-Posisi (kiri/tengah/kanan) menggeser *footprint panel* 840 px, bukan pill-nya, karena layer konten selalu terpusat di jendela; kalau pill yang ditempel ke tepi, panel yang melebar akan terpotong keluar layar.
+**Posisi (kiri/tengah/kanan) menggeser footprint, bukan pill.** Menengah memakai lebar jendela, kiri/kanan memakai lebar island, keduanya dikurangi `PAD`, supaya panel yang melebar tidak terpotong keluar layar.
 
-Panel sekarang memakai tab state (`panelTab`) dan merender satu tab pada satu waktu, bukan track horizontal 400% dengan swipe. Header berisi jam, tanggal, chip jaringan/baterai, gear Setelan, dan tombol tutup. Sparkline menyimpan histori sampel di komponen dan dibatasi jumlahnya; nilai jaringan memakai skala dinamis dari sampel tertinggi agar tetap terbaca saat idle.
+**Geometri window di-cache** (`GEOM`, `REGION` di `window.rs`) karena empat panggilan window di thread utama tiap 40 ms dulu membuat rendering, emit, dan pelacakan mata kelaparan.
 
-Tema memakai token `--di-*` di `app.css` plus alias lama (`--surface`, `--ink`, `--muted`, `--accent`, dst.) dan atribut `data-theme` di `<html>`; komponen tidak menyimpan warna sendiri. Nilai tersimpan dibaca sebelum render pertama agar tema terang tidak berkedip gelap. Motion memakai `--ease-island`/`--ease-pop` tanpa overshoot, durasi sekitar 240 ms, dan menghormati `prefers-reduced-motion`.
+**Panel memakai tab state, bukan rel track permanen.** Di layout `tabs` yang mounted hanya tiga pane (sebelum/sesudah) demi animasi geser; di layout `rail` satu pane saja dan isinya di-align ke atas, bukan diregangkan, supaya tinggi tetap 358 tidak menyisakan ruang mati.
 
-HUD volume/tombol adalah lapisan di atas notice unduhan: keduanya punya deadline sendiri (`hudUntil`, `noticeUntil`), HUD menang saat aktif, dan notice unduhan muncul lagi setelah HUD selesai. `announce()` membuang HUD yang masih tampil supaya unduhan yang baru selesai tidak tertutup. Hook keyboard dipasang di thread sendiri yang punya message loop (`WH_KEYBOARD_LL`); auto-repeat ditekan dengan bitmask tombol yang sedang ditahan, jadi menahan Tab tidak membanjiri event.
+**Sparkline menyimpan histori di komponen**, dan nilai jaringan memakai skala dinamis dari sampel tertinggi supaya tetap terbaca saat lalu lintas kecil.
 
-Permukaan island memakai gradien `--sheen` tipis di tepi atas, drop shadow luar (`--drop`), ring lembut (`--ring`), dan inset glow (`--glow`). Glow dibuat inset karena jendela Tauri transparan berukuran sama dengan island: saat panel penuh, glow luar akan terpotong batas jendela dan tampak kotak.
+**Tema memakai token** `--di-*` di `app.css` plus alias lama (`--surface`, `--ink`, `--muted`, `--accent`, dst.) dan atribut `data-theme` di `<html>`; komponen tidak punya warna sendiri kecuali beberapa permukaan maskot dan tombol accent yang memang sengaja tetap gelap di kedua tema. Hue glow per tab diambil dari `--glow-rgb` lewat selektor `[data-tab=...]`. Nilai tersimpan dibaca sebelum render pertama agar tema terang tidak berkedip gelap.
 
-Tiga hal yang bikin animasi terasa salah dan sudah dihindari: (1) `border-radius` memakai angka piksel (28/36/28), bukan `rounded-full`/9999px; (2) layer `IdleView`/`NoticeView`/`SystemPanel` diberi ukuran piksel tetap dengan `top-0 left-1/2 -translate-x-1/2`, bukan `inset-0`, supaya konten tidak ikut menyusut dan reflow tiap frame; (3) baris media/proses selalu dirender, termasuk saat kosong, supaya panel tidak berubah tinggi ketika sesi media muncul atau hilang.
+**Motion** memakai `--ease-island`/`--ease-pop` tanpa overshoot dengan durasi `morph_ms` (default 420), dan seluruh animasi besar menghormati `prefers-reduced-motion`. Kedipan mata sengaja CSS-nya tidak pakai animasi tak berujung supaya kompositor WebView2 boleh tidur.
 
-COM diinisialisasi per thread (`modules/com.rs`) karena Tauri menjalankan command di thread pool-nya; kalau thread itu sudah STA, `CoInitializeEx` menolak mode MTA (`RPC_E_CHANGED_MODE`) dan itu dianggap sukses, bukan error. WinRT async (GSMTC) di-block dengan poll-loop berduri 2 detik, jadi pemutar yang macet tidak parkir thread command selamanya.
+**COM diinisialisasi per thread** (`com.rs`) karena Tauri menjalankan command di thread pool-nya; kalau thread itu sudah STA, `CoInitializeEx` menolak mode MTA (`RPC_E_CHANGED_MODE`) dan itu dianggap sukses. WinRT async (GSMTC) di-block dengan poll-loop berduri 2 detik supaya pemutar yang macet tidak memarkir thread command selamanya.
 
-Notifikasi Windows dibaca langsung dari `%LOCALAPPDATA%\Microsoft\Windows\Notifications\wpndatabase.db` dengan mode read-only. Tiap 500 ms modul menghitung `MAX("Order")`, lalu mengambil maksimal 8 baris toast baru setelah nilai itu; `<text>` pertama jadi judul dan sisanya digabung dengan " Â· ". Nama app diambil dari `shell:AppsFolder\<AUMID>` lewat Shell COM (beberapa AUMID sistem dipetakan manual karena tidak terdaftar di AppsFolder). Payload tidak disalin atau disimpan â€” event hanya membawa judul, isi dan nama app ke UI. Kalau database dibuat ulang sehingga `Order` turun, watcher melakukan rebase tanpa memutar notifikasi lama.
+**Pengingat memakai jam dinding lokal** (`GetLocalTime`, bukan `SystemTime` UTC) supaya alarm mengikuti hari dan zona waktu pengguna; chrono sengaja tidak ditambahkan hanya untuk membaca tanggal. `wDayOfWeek` Windows (0 = Minggu) dikonversi ke bitmask Senin-first lewat `1 << ((wDayOfWeek + 6) % 7)` agar satu bit = satu chip hari di UI. CRUD-nya satu kali tulis daftar penuh (`save_reminders` menerima seluruh daftar, backend menormalkan lalu mengembalikan hasilnya) mengikuti pola `set_favorites`, jadi frontend tidak pernah punya id karangan.
 
-Pengingat memakai jam dinding lokal (`GetLocalTime` dari API Windows, bukan `SystemTime` UTC) supaya alarm mengikuti hari dan zona waktu pengguna; chrono sengaja tidak ditambahkan hanya untuk membaca tanggal. `wDayOfWeek` Windows (0 = Minggu) dikonversi ke bitmask Senin-first lewat `1 << ((wDayOfWeek + 6) % 7)` agar satu bit = satu tombol chip di UI. Seperti timer dan notifikasi Windows, pemicunya thread `std::thread::spawn` yang `emit` + `reveal`, bukan interval di frontend: pill harus tetap berbunyi saat island tersembunyi atau tidak sedang digambar. CRUD-nya satu kali tulis daftar penuh (`save_reminders` menerima seluruh daftar, backend menormalkan lalu mengembalikan hasilnya) mengikuti pola `set_favorites`, jadi frontend tidak pernah punya id karangan dan tidak perlu sinkronisasi per butir.
+**Payload notifikasi tidak pernah disalin atau disimpan** — event hanya membawa judul, isi, dan nama app. Kalau database dibuat ulang sehingga `Order` turun, watcher melakukan rebase tanpa memutar notifikasi lama.
 
-Tray memakai icon default aplikasi dan managed state untuk dua item yang berubah saat runtime (label tampil/sembunyi dan checkbox autostart). Autostart memakai plugin resmi dengan entri HKCU Run per-user; command `autostart_status`/`set_autostart` membungkusnya supaya frontend tidak perlu izin plugin tambahan, dan `modules/autostart.rs` mengirim `autostart-changed` agar halaman setelan dan menu tray tidak pernah berbeda state. Saat dev, entri autostart menunjuk `target\debug\desk-island.exe`; setelah aplikasi di-install, toggle ulang supaya menunjuk executable hasil instalasi.
+**Tray memakai managed state** untuk dua item yang berubah saat runtime (label tampil/sembunyi dan checkbox autostart). Autostart memakai plugin resmi dengan entri HKCU Run per-user; saat dev entri itu menunjuk `target\debug\desk-island.exe`, jadi setelah install ulang toggle-nya sekali supaya menunjuk executable hasil instalasi.
+
+**Jendela Setelan dibuat dari command async** (`open_settings`) untuk menghindari deadlock WebView2 saat membuat window dari command sinkron di Windows. View-nya dipilih lewat initialization script (`window.__DESK_VIEW__ = 'settings'`), bukan query string.
+
+**`main.rs` men-set flag WebView2** (`--disable-backgrounding-occluded-windows` dan kerabatnya); tanpa itu jendela transparan always-on-top dianggap "occluded" dan renderer-nya dibatasi sampai animasi patah-patah.
 
 ## Roadmap berikutnya
 
-Code signing dan uji installer di mesin bersih.
-
-
+- Code signing dan uji installer di mesin bersih.
+- `panic = "abort"` + `.expect("... poisoned")` di delapan tempat berarti satu panic di thread mana pun mematikan seluruh aplikasi; perlu keputusan sadar (memperkecil `.expect` atau membatasi dampak panic).
+- Lint/format dan CI belum ada sama sekali (`npm run check`, `cargo check`, dan build tidak dijaga otomatis).
+- Beberapa warna permukaan maskot dan tombol accent tidak ikut tema terang.
+- `set_island_position` mengubah margin atas di sisi Rust tanpa menulis `settings.json`; ia hanya awet kalau frontend juga memanggil `set_settings`.
+- `desktop.ts` masih mengekspor `playSystemBeep` yang tidak pernah dipanggil, dan `quick.rs` menyokong bagian display/battery/screenshot yang tidak ditampilkan di UI.
