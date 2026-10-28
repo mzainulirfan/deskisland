@@ -49,7 +49,8 @@
     | 'layout-rail'
     | 'layout-tabs'
     | 'trash'
-    | 'edit';
+    | 'edit'
+    | 'search';
 </script>
 
 <script lang="ts">
@@ -103,6 +104,7 @@
   import menu from 'iconoir/icons/menu.svg?raw';
   import edit from 'iconoir/icons/edit.svg?raw';
   import trash from 'iconoir/icons/trash.svg?raw';
+  import search from 'iconoir/icons/search.svg?raw';
 
   // Iconoir ships complete documents; keep only the inner markup for our own <svg>.
   const inner = (svg: string) => svg.slice(svg.indexOf('>') + 1, svg.lastIndexOf('</svg>'));
@@ -158,6 +160,7 @@
     'layout-tabs': inner(menu),
     edit: inner(edit),
     trash: inner(trash),
+    search: inner(search),
   };
 
   let {
