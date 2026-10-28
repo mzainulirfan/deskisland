@@ -1,0 +1,53 @@
+{
+  "productName": "Desk Island",
+  "version": "0.1.0",
+  "identifier": "com.desk.island",
+  "build": {
+    "beforeDevCommand": "npm run dev",
+    "devUrl": "http://127.0.0.1:1420",
+    "beforeBuildCommand": "npm run build",
+    "frontendDist": "../dist"
+  },
+  "app": {
+    "windows": [
+      {
+        "label": "island",
+        "title": "Desk Island",
+        "width": 704,
+        "height": 304,
+        "decorations": false,
+        "transparent": true,
+        "alwaysOnTop": true,
+        "resizable": false,
+        "shadow": false,
+        "skipTaskbar": true,
+        "focus": false
+      }
+    ],
+    "security": {
+      "csp": null
+    }
+  },
+  "bundle": {
+    "active": true,
+    "targets": ["nsis"],
+    "publisher": "Desk Island",
+    "copyright": "© 2026 Desk Island",
+    "category": "Utility",
+    "shortDescription": "Dynamic Island untuk Windows 10/11",
+    "longDescription": "Pill always-on-top di tengah atas layar untuk memantau CPU, RAM, jaringan, volume, media, unduhan dan notifikasi Windows.",
+    "icon": [
+      "icons/32x32.png",
+      "icons/128x128.png",
+      "icons/128x128@2x.png",
+      "icons/icon.icns",
+      "icons/icon.ico"
+    ],
+    "windows": {
+      "nsis": {
+        "installMode": "currentUser",
+        "installerIcon": "icons/icon.ico"
+      }
+    }
+  }
+}
