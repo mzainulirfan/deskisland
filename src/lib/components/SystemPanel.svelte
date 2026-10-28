@@ -95,6 +95,34 @@
   // content, and let the far panes unmount entirely.
   const mounted = (index: number) => Math.abs(tabIndex - index) <= 1;
 
+  // The menu opens a page on hover, not only on click. The short intent delay is the same
+  // trick the pill uses to expand: sweeping the cursor across the rail must not flip
+  // through every tab on the way to the one that was meant.
+  const HOVER_TAB_MS = 120;
+  let pendingTab: PanelTab | undefined;
+  let hoverTimer: ReturnType<typeof setTimeout> | undefined;
+
+  function hoverTab(tab: PanelTab) {
+    if (island.panelTab === tab) {
+      cancelHoverTab();
+      return;
+    }
+    if (pendingTab === tab) return;
+    pendingTab = tab;
+    clearTimeout(hoverTimer);
+    hoverTimer = setTimeout(() => {
+      pendingTab = undefined;
+      island.panelTab = tab;
+    }, HOVER_TAB_MS);
+  }
+
+  function cancelHoverTab() {
+    clearTimeout(hoverTimer);
+    pendingTab = undefined;
+  }
+
+  $effect(() => () => clearTimeout(hoverTimer));
+
   function onPointerDown(event: PointerEvent) {
     if (event.button !== 0) return;
     const target = event.target as HTMLElement | null;
@@ -234,7 +262,13 @@
     </div>
 
     {#if horizontal}
-      <div class="nav-bar flex shrink-0 items-center gap-0.5" role="tablist" aria-label="Bagian panel">
+      <div
+        class="nav-bar flex shrink-0 items-center gap-0.5"
+        role="tablist"
+        tabindex="-1"
+        aria-label="Bagian panel"
+        onpointerleave={cancelHoverTab}
+      >
         {#each tabs as tab (tab.id)}
           {@const active = island.panelTab === tab.id}
           <button
@@ -245,6 +279,7 @@
             aria-selected={active}
             aria-label={tab.full ?? tab.label}
             title={tab.full ?? tab.label}
+            onpointerenter={() => hoverTab(tab.id)}
             onclick={() => (island.panelTab = tab.id)}
           >
             <Icon name={tab.icon} class="size-4" />
@@ -309,7 +344,13 @@
     </div>
   {:else}
     <div class="mt-1.5 flex min-h-0 flex-1 gap-2 pl-2.5 pr-3.5">
-      <div class="rail flex shrink-0 flex-col items-center gap-1 py-1" role="tablist" aria-label="Bagian panel">
+      <div
+        class="rail flex shrink-0 flex-col items-center gap-1 py-1"
+        role="tablist"
+        tabindex="-1"
+        aria-label="Bagian panel"
+        onpointerleave={cancelHoverTab}
+      >
         {#each tabs as tab (tab.id)}
           {@const active = island.panelTab === tab.id}
           <button
@@ -320,6 +361,7 @@
             aria-selected={active}
             aria-label={tab.full ?? tab.label}
             title={tab.full ?? tab.label}
+            onpointerenter={() => hoverTab(tab.id)}
             onclick={() => (island.panelTab = tab.id)}
           >
             <Icon name={tab.icon} class="size-4" />
