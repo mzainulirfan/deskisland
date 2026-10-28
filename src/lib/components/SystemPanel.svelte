@@ -99,6 +99,12 @@
   // trick the pill uses to expand: sweeping the cursor across the rail must not flip
   // through every tab on the way to the one that was meant.
   const HOVER_TAB_MS = 120;
+  // Activating a tab in the horizontal layout grows its button (the label fades in), which
+  // slides every button after it. Chromium then reports the button that moved under a
+  // motionless cursor as a fresh hover, and the page walks away from the pointer one tab at
+  // a time. Ignoring entries for a moment after a switch lets the strip settle first.
+  const HOVER_SETTLE_MS = 350;
+  let settledAt = 0;
   let pendingTab: PanelTab | undefined;
   let hoverTimer: ReturnType<typeof setTimeout> | undefined;
 
@@ -107,11 +113,13 @@
       cancelHoverTab();
       return;
     }
+    if (Date.now() - settledAt < HOVER_SETTLE_MS) return;
     if (pendingTab === tab) return;
     pendingTab = tab;
     clearTimeout(hoverTimer);
     hoverTimer = setTimeout(() => {
       pendingTab = undefined;
+      settledAt = Date.now();
       island.panelTab = tab;
     }, HOVER_TAB_MS);
   }
