@@ -255,7 +255,7 @@
        injected in the centre; in rail mode the centre stays empty and the strip lives
        in the vertical rail below. -->
   <div class="flex h-12 shrink-0 items-center gap-2 px-3.5">
-    <div class="flex min-w-0 flex-1 basis-0 items-center gap-2.5">
+    <div class="panel-item panel-first flex min-w-0 flex-1 basis-0 items-center gap-2.5">
       <span
         class="eyes-badge flex size-8 shrink-0 items-center justify-center rounded-[10px] bg-[linear-gradient(145deg,color-mix(in_srgb,var(--di-blue)_30%,transparent),color-mix(in_srgb,var(--di-purple)_14%,transparent))] ring-1 ring-[color:color-mix(in_srgb,var(--di-blue)_24%,transparent)]"
       >
@@ -278,12 +278,13 @@
         aria-label="Bagian panel"
         onpointerleave={cancelHoverTab}
       >
-        {#each tabs as tab (tab.id)}
+        {#each tabs as tab, index (tab.id)}
           {@const active = island.panelTab === tab.id}
           <button
             type="button"
-            class="tab-btn"
+            class="tab-btn panel-item"
             class:tab-btn-on={active}
+            style:--i={index + 1}
             role="tab"
             aria-selected={active}
             aria-label={tab.full ?? tab.label}
@@ -299,23 +300,36 @@
     {/if}
 
     <div class="flex min-w-0 flex-1 basis-0 items-center justify-end gap-1.5">
-      <span class="status-chip text-[var(--muted)]" title="Lalu lintas jaringan">
+      <span
+        class="status-chip panel-item text-[var(--muted)]"
+        style:--i={9}
+        title="Lalu lintas jaringan"
+      >
         <Icon name="wifi" class="size-3.5 text-[var(--di-blue)]" />
         <span>{rate(networkRate)}</span>
       </span>
 
       {#if battery}
-        <span class="status-chip {batteryTone}" title={battery.charging ? 'Baterai sedang mengisi' : 'Baterai'}>
+        <span
+          class="status-chip panel-item {batteryTone}"
+          style:--i={10}
+          title={battery.charging ? 'Baterai sedang mengisi' : 'Baterai'}
+        >
           <Icon name={battery.charging ? 'bolt' : 'battery'} class="size-3.5" />
           <span>{battery.percent}%</span>
         </span>
       {/if}
 
-      <span class="mx-0.5 h-4 w-px shrink-0 bg-[var(--line)]" aria-hidden="true"></span>
+      <span
+        class="panel-item mx-0.5 h-4 w-px shrink-0 bg-[var(--line)]"
+        style:--i={10}
+        aria-hidden="true"
+      ></span>
 
       <button
         type="button"
-        class="flex size-7 items-center justify-center rounded-full bg-[var(--chip)] text-[var(--muted)] ring-1 ring-[color:var(--line)] transition-colors hover:bg-[var(--di-surface-hover)] hover:text-[var(--ink)]"
+        class="panel-item flex size-7 items-center justify-center rounded-full bg-[var(--chip)] text-[var(--muted)] ring-1 ring-[color:var(--line)] transition-colors hover:bg-[var(--di-surface-hover)] hover:text-[var(--ink)]"
+        style:--i={11}
         aria-label="Buka setelan"
         title="Buka setelan"
         onclick={() => void openSettingsWindow()}
@@ -327,7 +341,7 @@
 
   {#if horizontal}
     <div
-      class="relative mt-3 min-h-0 flex-1 cursor-grab touch-pan-y overflow-hidden active:cursor-grabbing"
+      class="panel-body relative mt-3 min-h-0 flex-1 cursor-grab touch-pan-y overflow-hidden active:cursor-grabbing"
       role="group"
       aria-label="Isi bagian panel"
       onpointerdown={onPointerDown}
@@ -352,7 +366,7 @@
       </div>
     </div>
   {:else}
-    <div class="mt-1.5 flex min-h-0 flex-1 gap-2 pl-2.5 pr-3.5">
+    <div class="panel-body mt-1.5 flex min-h-0 flex-1 gap-2 pl-2.5 pr-3.5">
       <div
         class="rail flex shrink-0 flex-col items-center gap-1 py-1"
         role="tablist"
@@ -546,6 +560,61 @@
     to {
       opacity: 1;
       transform: translateY(0);
+    }
+  }
+
+  /* Idle -> panel, from the reference island: the header pieces and then the body settle
+     in turn, each fading up from a raised, blurred state while the shell springs open
+     around them. `--i` is the piece's place in the stagger; `--expand-ms` is set by
+     Island.svelte and `--ease-spring` lives in app.css. `backwards` fills the delay with
+     the hidden state but, unlike `both`, leaves no filter/transform behind afterwards. */
+  .panel-item {
+    animation: panel-item-in calc(var(--expand-ms, 630ms) * 0.8) var(--ease-spring) backwards;
+    animation-delay: calc(
+      var(--expand-ms, 630ms) * 0.17 + var(--i, 0) * var(--expand-ms, 630ms) * 0.062
+    );
+  }
+
+  /* The clock/eyes badge hands over from the idle pill, so it barely waits its turn. */
+  .panel-first {
+    animation-delay: calc(var(--expand-ms, 630ms) * 0.08);
+  }
+
+  .panel-body {
+    animation: panel-body-in calc(var(--expand-ms, 630ms) * 0.85) var(--ease-out) backwards;
+    animation-delay: calc(var(--expand-ms, 630ms) * 0.26);
+  }
+
+  @keyframes panel-item-in {
+    from {
+      opacity: 0;
+      transform: translateY(-6px) scale(0.92);
+      filter: blur(5px);
+    }
+    to {
+      opacity: 1;
+      transform: translateY(0) scale(1);
+      filter: blur(0);
+    }
+  }
+
+  @keyframes panel-body-in {
+    from {
+      opacity: 0;
+      transform: translateY(6px);
+      filter: blur(4px);
+    }
+    to {
+      opacity: 1;
+      transform: translateY(0);
+      filter: blur(0);
+    }
+  }
+
+  @media (prefers-reduced-motion: reduce) {
+    .panel-item,
+    .panel-body {
+      animation: none;
     }
   }
 </style>

@@ -38,6 +38,10 @@
   // means dropping 36 px here, otherwise the panel keeps a dead strip under the menu.
   const EXPANDED_SIZE = { width: 672, height: 358 };
 
+  // The reference island springs open over ~650 ms. The user's variant timing scales
+  // into that range so the expand never feels twitchy or sluggish on its own.
+  const expandMs = $derived(Math.min(760, Math.max(420, Math.round(island.morphMs * 1.5))));
+
   // Horizontal layout only: each tab paints a tighter box, so the panel shrinks to the
   // content and the trimmed strip below never traps desktop clicks. In rail layout the
   // menu is the same height on every tab, so the island stays at EXPANDED_SIZE.height.
@@ -109,6 +113,16 @@
   let peek = $state(false);
   let panelMounted = $state(false);
   let panelCloseTimer: ReturnType<typeof setTimeout> | undefined;
+  // True only while the spring expand is on screen; afterwards tab switches keep the
+  // short 200 ms box transition instead of re-running the long one.
+  let expanding = $state(false);
+  let expandTimer: ReturnType<typeof setTimeout> | undefined;
+
+  function beginExpand() {
+    clearTimeout(expandTimer);
+    expanding = true;
+    expandTimer = setTimeout(() => (expanding = false), expandMs + 90);
+  }
 
   async function applyPassthrough(ignore: boolean) {
     if (passthrough === ignore) return;
@@ -190,6 +204,7 @@
     panelMounted = true;
     island.pinned = false;
     island.panelTab = tab;
+    beginExpand();
     island.mode = 'panel';
     suppressHoverUntil = 0;
     pushRegion('panel');
@@ -235,6 +250,7 @@
     outsideSince = 0;
     if (island.fullscreen) peek = true;
     panelMounted = true;
+    if (island.mode !== 'panel') beginExpand();
     island.mode = 'panel';
     pushRegion('panel');
     await applyPassthrough(false);
@@ -285,7 +301,10 @@
     }
 
     if (wanted !== island.mode) {
-      if (wanted === 'panel') endWelcome();
+      if (wanted === 'panel') {
+        endWelcome();
+        beginExpand();
+      }
       island.mode = wanted;
       pushRegion(wanted);
     }
@@ -490,6 +509,7 @@
       clearInterval(poll);
       clearTimeout(welcomeTimer);
       clearTimeout(panelCloseTimer);
+      clearTimeout(expandTimer);
       unlistenToggle?.();
       unlistenFullscreen?.();
       unlistenShown?.();
@@ -502,13 +522,15 @@
 <svelte:window onkeydown={onKeydown} />
 
 <div
-  class="island-glow relative overflow-hidden text-[var(--ink)]"
+  class="island-glow relative shrink-0 overflow-hidden text-[var(--ink)]"
   class:island-dim={island.mode === 'idle' && dimmed}
   class:island-hidden={island.fullscreen && !peek}
   class:island-welcome={welcoming && island.mode === 'idle'}
+  class:island-opening={expanding}
   data-tab={island.mode === 'panel' ? island.panelTab : 'system'}
   data-morph={island.mode === 'panel' ? 'panel' : 'idle'}
   style:--morph-ms="{island.morphMs}ms"
+  style:--expand-ms="{expandMs}ms"
   style:width="{box.width}px"
   style:height="{box.height}px"
   style:border-radius="{box.radius}px"
@@ -589,9 +611,11 @@
   </div>
 
   <div
-    class="island-view absolute inset-0 {island.mode === 'panel'
-      ? 'translate-y-0 scale-100 opacity-100'
-      : 'pointer-events-none translate-y-[6px] scale-[0.82] opacity-0'}"
+    class="island-view island-panel-view absolute top-0 left-0 {island.mode === 'panel'
+      ? 'translate-y-0 opacity-100'
+      : 'pointer-events-none translate-y-[6px] opacity-0'}"
+    style:width="{EXPANDED_SIZE.width}px"
+    style:height="{panelHeight(island.panelTab)}px"
     inert={island.mode !== 'panel'}
   >
     {#if panelMounted}
