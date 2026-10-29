@@ -19,10 +19,6 @@ pub struct AppState {
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     tauri::Builder::default()
-        .plugin(tauri_plugin_autostart::init(
-            tauri_plugin_autostart::MacosLauncher::LaunchAgent,
-            None,
-        ))
         .plugin(
             tauri_plugin_global_shortcut::Builder::new()
                 .with_handler(|app, _shortcut, event| {
@@ -49,6 +45,7 @@ pub fn run() {
             fullscreen::start(app.handle().clone());
             timer::start(app.handle().clone());
             reminders::start(app.handle().clone());
+            autostart::repair(app.handle());
             tray::init(app)?;
             let shortcut = Shortcut::new(Some(Modifiers::CONTROL | Modifiers::ALT), Code::Space);
             let _ = app.global_shortcut().register(shortcut);

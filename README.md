@@ -114,7 +114,7 @@ Berkas data di `%APPDATA%\com.desk.island`: `settings.json` (snake_case) dan `re
 
 **Payload notifikasi tidak pernah disalin atau disimpan** — event hanya membawa judul, isi, dan nama app. Kalau database dibuat ulang sehingga `Order` turun, watcher melakukan rebase tanpa memutar notifikasi lama.
 
-**Tray memakai managed state** untuk dua item yang berubah saat runtime (label tampil/sembunyi dan checkbox autostart). Autostart memakai plugin resmi dengan entri HKCU Run per-user; saat dev entri itu menunjuk `target\debug\desk-island.exe`, jadi setelah install ulang toggle-nya sekali supaya menunjuk executable hasil instalasi.
+**Tray memakai managed state** untuk dua item yang berubah saat runtime (label tampil/sembunyi dan checkbox autostart). Autostart memakai `auto-launch` langsung (tanpa plugin) supaya path yang ditulis bisa dikendalikan: entri HKCU Run per-user bernama productName (`Desk Island`) selalu ditulis dalam tanda kutip karena folder instalasi mengandung spasi. Build dev tidak meng-embed frontend dan hanya bisa jalan di samping server Vite, jadi tombol mulai otomatis di build dev menunjuk executable hasil instalasi (`%LOCALAPPDATA%\Desk Island\desk-island.exe`) dan menolak aktif kalau aplikasi belum dipasang. Tiap start, `autostart::repair` menulis ulang entri yang masih menunjuk build dev ke executable terpasang — atau menghapusnya kalau tidak ada instalasi — sehingga login tidak pernah membuka jendela WebView2 yang error.
 
 **Jendela Setelan dibuat dari command async** (`open_settings`) untuk menghindari deadlock WebView2 saat membuat window dari command sinkron di Windows. View-nya dipilih lewat initialization script (`window.__DESK_VIEW__ = 'settings'`), bukan query string.
 

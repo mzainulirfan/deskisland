@@ -3,7 +3,6 @@ use tauri::{
     tray::{MouseButton, MouseButtonState, TrayIconBuilder, TrayIconEvent},
     App, AppHandle, Emitter, Manager, Wry,
 };
-use tauri_plugin_autostart::ManagerExt;
 
 pub struct TrayMenu {
     visibility: MenuItem<Wry>,
@@ -11,17 +10,18 @@ pub struct TrayMenu {
 }
 
 pub fn init(app: &mut App) -> tauri::Result<()> {
-    let autostart_enabled = app.autolaunch().is_enabled().unwrap_or(false);
+    let autostart_enabled = crate::modules::autostart::is_enabled(app.handle());
 
-    let visibility =
-        MenuItem::with_id(app, "visibility", "Sembunyikan island", true, None::<&str>)?;
     let panel = MenuItem::with_id(
         app,
         "panel",
-        "Buka panel (Ctrl+Alt+Space)",
+        "Buka panel\tCtrl+Alt+Space",
         true,
         None::<&str>,
     )?;
+    let visibility =
+        MenuItem::with_id(app, "visibility", "Sembunyikan island", true, None::<&str>)?;
+    let before_toggles = PredefinedMenuItem::separator(app)?;
     let autostart = CheckMenuItem::with_id(
         app,
         "autostart",
@@ -30,38 +30,39 @@ pub fn init(app: &mut App) -> tauri::Result<()> {
         autostart_enabled,
         None::<&str>,
     )?;
-    let separator = PredefinedMenuItem::separator(app)?;
     let settings = MenuItem::with_id(app, "settings", "Setelan…", true, None::<&str>)?;
+    let before_quit = PredefinedMenuItem::separator(app)?;
     let quit = MenuItem::with_id(app, "quit", "Keluar", true, None::<&str>)?;
     let menu = Menu::with_items(
         app,
         &[
-            &visibility,
             &panel,
+            &visibility,
+            &before_toggles,
             &autostart,
-            &separator,
             &settings,
+            &before_quit,
             &quit,
         ],
     )?;
 
     let mut builder = TrayIconBuilder::with_id("island")
-        .tooltip("Desk Island")
+        .tooltip("Desk Island — klik untuk panel, klik kanan untuk menu")
         .menu(&menu)
         .show_menu_on_left_click(false)
         .on_menu_event(|app, event| match event.id.as_ref() {
+            "panel" => open_panel(app),
             "visibility" => toggle_visibility(app),
-            "panel" => {
-                if crate::modules::window::reveal(app) {
-                    sync_visibility(app, true);
-                }
-                let _ = app.emit("toggle-panel", ());
-            }
             "settings" => {
-                let _ = crate::modules::settings::open_settings(app.clone());
+                // `open_settings` is async; the future has to be polled on the runtime
+                // or the window is never built.
+                let app = app.clone();
+                tauri::async_runtime::spawn(async move {
+                    let _ = crate::modules::settings::open_settings(app).await;
+                });
             }
             "autostart" => {
-                let enabled = app.autolaunch().is_enabled().unwrap_or(false);
+                let enabled = crate::modules::autostart::is_enabled(app);
                 let _ = crate::modules::autostart::apply(app, !enabled);
             }
             "quit" => app.exit(0),
@@ -74,7 +75,9 @@ pub fn init(app: &mut App) -> tauri::Result<()> {
                 ..
             } = event
             {
-                toggle_visibility(tray.app_handle());
+                // Clicking the tray icon is the usual way to bring an app forward; a
+                // click that hid the island was the only way back in and surprised users.
+                open_panel(tray.app_handle());
             }
         });
 
@@ -104,6 +107,13 @@ pub fn sync_visibility(app: &AppHandle, visible: bool) {
             "Tampilkan island"
         });
     }
+}
+
+fn open_panel(app: &AppHandle) {
+    if crate::modules::window::reveal(app) {
+        sync_visibility(app, true);
+    }
+    let _ = app.emit("toggle-panel", ());
 }
 
 fn toggle_visibility(app: &AppHandle) {
